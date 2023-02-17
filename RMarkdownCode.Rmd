@@ -1,0 +1,585 @@
+---
+title: "Insitu_MassivePorites"
+author: "Colin Anthony"
+date: '2022-08-09'
+output: pdf_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE) 
+
+library(pacman)
+pacman::p_load(lattice, rcompanion, FSA, plyr, dplyr, readxl, vegan, factoextra,
+               FD, tidyverse, sem, ggplot2, ggpubr, ggExtra, ggtext, patchwork,
+               paletteer, scales, nptest, rstatix, RColorBrewer, gridExtra)
+
+PoritesSurveyData <- read_excel("C:/Users/colin/Downloads/PoritesSurveyData.xlsx", 
+                                sheet = "DATA (2)", col_types = c("text", 
+                                                              "text", "text", 
+                                                              "numeric", "text", 
+                                                              "text", "numeric",
+                                                              "numeric","numeric", 
+                                                              "numeric","numeric", 
+                                                              "numeric","numeric",
+                                                              "numeric","numeric", 
+                                                              "numeric", "text"))
+
+PoritesSurveyData <- subset(PoritesSurveyData, Species == "Mass")
+PoritesSurveyData <- subset(PoritesSurveyData, SizeClass != "0")
+PoritesSurveyData <- subset(PoritesSurveyData, Color != "bb")
+PoritesSurveyData <- subset(PoritesSurveyData, Color != "g")
+PoritesSurveyData$Color <- recode(PoritesSurveyData$Color, y = "brown", 
+                                  b = "brown", bp = "brown/purple", p = "purple")
+
+PoritesSurveyData$DepthFactor <- recode(PoritesSurveyData$Depth, "1" = "1-2 m", 
+                                        "2" = "1-2 m", "3" = "3-5 m", "4" = "3-5 m", 
+                                        "5" = "3-5 m", "6" = "3-5 m","8" = "8-10 m", 
+                                        "9" = "8-10 m", "10" = "8-10 m", 
+                                        "15" = "15-18 m", "18" = "15-18 m")
+PoritesSurveyData$Depth <- recode(PoritesSurveyData$Depth, "1" = "1", "2" = "1",
+                                  "3" = "3", "4" = "3", "5" = "3", "6" = "3",
+                                  "8" = "10", "9" = "10", "10" = "10", "15" = "15", 
+                                  "18" = "15")
+
+PoritesSurveyData$ReefType <- recode(PoritesSurveyData$Site, 
+                                     "Babi Island" = "Fore reef", "Haputo" = "Fore reef", 
+                                     "Ypao" = "Fore reef", "Luminao" = "Reef flat", 
+                                     "Piti West" = "Reef flat", "Tumon" = "Reef flat")
+
+CleanMassives <- PoritesSurveyData
+
+CleanMassives$Depth <- as.numeric(CleanMassives$Depth)
+CleanMassives$Depth <- factor(CleanMassives$Depth, levels=c('1','3','10','15'))
+
+Size_Class <- ggplot(CleanMassives, aes(SizeClass))+
+  geom_bar(aes(fill = Color), position = "stack")+
+  theme_classic()+
+  theme(legend.position = "bottom")+
+  facet_grid(cols = vars(Depth), rows = vars(Site))+
+  ggtitle("Size")
+Size_Class
+```
+
+```{r}
+## Non-parametric Correlation Test to separate reef types as a compounding factor
+Matrix <- CleanMassives
+#Produce a numeric matrix
+Matrix <- select(Matrix, Recorder, Site, ReefType, Depth, Color, SizeClass, 
+                 PartMort, TotalDisease)
+
+Matrix$Recorder <- recode(Matrix$Recorder, "BB" = "1", "CA" = "2", "CL" = "3", 
+                          "CT" = "4", "GM" = "5", "LJR" = "6", "MA" = "7", "TM" = "8")
+Matrix$Site <- recode(Matrix$Site, "Babi Island" = "1", "Haputo" = "2", "Luminao" = "3", 
+                      "Piti West" = "4", "Tumon" = "5", "Ypao" = "6")
+Matrix$ReefType <- recode(Matrix$ReefType, "Reef flat" = "1", "Fore reef" = "2")
+Matrix$Color <- recode(Matrix$Color, "brown" = "1", "brown-purple" = "2", "purple" = "3")
+Matrix$TotalDisease <- recode(Matrix$TotalDisease, "0" = "0", "1" ="1", "2" = "1", 
+                              "3" = "1", "4" = "1", "5" = "1", "6" = "1", "7" = "1")
+
+#View(Matrix)
+Matrix$Recorder <- as.numeric(Matrix$Recorder)
+Matrix$Site <- as.numeric(Matrix$Site)
+Matrix$ReefType <- as.numeric(Matrix$ReefType)
+Matrix$Color <- as.numeric(Matrix$Color)
+Matrix$TotalDisease <- as.numeric(Matrix$TotalDisease)
+Matrix$Depth <- as.numeric(Matrix$Depth)
+
+```
+
+```{r}
+
+matrixfore <- subset(Matrix, ReefType != 1)
+matrixflat <- subset(Matrix, ReefType != 2)
+matrixfore <- select(matrixfore, Recorder, Site, Depth, Color, SizeClass, 
+                     PartMort, TotalDisease)
+matrixflat <- select(matrixflat, Recorder, Site, Color, SizeClass, PartMort, 
+                     TotalDisease)
+
+par(mfrow=c(1,2))
+#Reef Flat exclusive correlations
+cor.matflat <- cor_mat(matrixflat, method = "spearman",  
+                       alternative = "two.sided", conf.level = 0.99)
+cor.matflat %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+
+statisticaloutputflat <- cor_gather(cor.matflat)
+statisticaloutputflat %>% as_tibble %>% print(n = nrow(.))
+
+#Forereef exclusive correlations
+cor.matfore <- cor_mat(matrixfore, method = "spearman",  
+                       alternative = "two.sided", conf.level = 0.99)
+cor.matfore %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+
+statisticaloutputfore <- cor_gather(cor.matfore)
+statisticaloutputfore %>% as_tibble %>% print(n = nrow(.))
+```
+
+First plot is for reef flats; Second plot is for forereefs
+
+```{r}
+
+## Compare CA and CL directly for the most consistent biological correlations
+
+#CA
+O2<- subset(Matrix, Recorder == "2")
+O2 <- O2[complete.cases(O2), ]
+O2$Recorder <- NULL
+O2$ReefType <- NULL
+
+#CL
+O3<- subset(Matrix, Recorder == "3")
+O3 <- O3[complete.cases(O3), ]
+O3$Recorder <- NULL
+O3$ReefType <- NULL
+
+par(mfrow=c(1,2))
+cor.O2 <- cor_mat(O2, method = "spearman",  
+                  alternative = "two.sided", conf.level = 0.99)
+cor.O2 %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+
+statisticaloutputfore <- cor_gather(cor.matfore)
+statisticaloutputfore %>% as_tibble %>% print(n = nrow(.))
+
+cor.O3 <- cor_mat(O3, method = "spearman",  
+                  alternative = "two.sided", conf.level = 0.99)
+cor.O3 %>%
+  cor_reorder() %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+
+statisticaloutputfore <- cor_gather(cor.matfore)
+statisticaloutputfore %>% as_tibble %>% print(n = nrow(.))
+
+```
+
+```{r}
+#Recorder removed
+MatrixNoRecorder = subset(Matrix, select = -c(Recorder, Site, ReefType) )
+
+par(mfrow=c(1,2))
+cor.matfinal <- cor_mat(MatrixNoRecorder, method = "spearman",  
+                        alternative = "two.sided", conf.level = 0.999)
+cor.matfinal %>%
+  pull_lower_triangle() %>%
+  cor_plot(label = TRUE)
+statisticaloutput <- cor_gather(cor.matfinal)
+statisticaloutput %>% as_tibble %>% print(n = nrow(.))
+```
+The total Spearman's rho analysis has confirmed a real correlation between size class, mortality, and disease
+This was used to inform tests of differences across depth and color.
+
+```{r, results='hide', fig.keep='all'}
+
+#Plot the strongest and most consistent correlations (Figure 2)
+
+CleanMassives$SizeClass <- as.numeric(CleanMassives$SizeClass)
+CleanMassives$PartMort <- as.numeric(CleanMassives$PartMort)
+red_beard<- ggplot(CleanMassives, aes(x = SizeClass, y = PartMort)) +
+  geom_boxplot(aes(group = SizeClass), outlier.shape = NA)+
+  geom_point(alpha = 0.0) +
+  geom_jitter(alpha = 0.05)+
+  xlab(label = "Size class")+
+  ylab(label = "Partial mortality")+
+  ggtitle("A")+
+  annotate('text', x = 5.5, y = 5.5, label = "~rho~{}==0.48 ",
+           parse = TRUE, size=5)+
+  scale_x_continuous(breaks = c(1,2,3,4,5,6))+
+  scale_y_continuous(breaks = c(0,1,2,3,4,5,6))+
+  theme_minimal()+
+  theme(axis.text.x = element_text(size = 12), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold", vjust = -1), 
+        panel.grid.minor = element_blank())
+
+SizeMort <- ggMarginal(red_beard, type = "histogram")
+
+CleanMassives$TotalDisease[CleanMassives$TotalDisease > 0] <- 1
+
+SizeDis <- ggplot(CleanMassives, aes(x = SizeClass, y = TotalDisease)) +
+  geom_boxplot(aes(group = TotalDisease, horizontal = TRUE), outlier.shape = NA)+
+  #geom_point(alpha = 1) +
+  geom_jitter(alpha = 0.04)+
+  xlab(label = "Size class")+
+  ylab(label = "Active disease")+
+  ggtitle("C")+
+  annotate('text', x = 5.2, y = 1.2, label = "~rho~{}==0.2 ",parse = TRUE, size=5)+
+  scale_x_continuous(breaks = c(1,2,3,4,5,6))+
+  scale_y_continuous(breaks = c(0,1))+
+  theme_minimal()+
+  theme(axis.text.x = element_text(size = 12), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        panel.grid.minor = element_blank())
+
+MortDis <- ggplot(CleanMassives, aes(x = PartMort, y = TotalDisease)) +
+  geom_boxplot(aes(group = TotalDisease), outlier.shape = NA)+
+  #geom_point(alpha = 1) +
+  geom_jitter(alpha = 0.04)+
+  xlab(label = "Partial mortality")+
+  ylab(label = "Active disease")+
+  ggtitle("B")+
+  annotate('text', x = 5, y = 1.2, label = "~rho~{}==0.18 ",parse = TRUE, size=5)+
+  scale_x_continuous(breaks = c(0,1,2,3,4,5,6))+
+  scale_y_continuous(breaks = c(0,1))+
+  theme_minimal()+
+  theme(axis.text.x = element_text(size = 12), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        panel.grid.minor = element_blank())
+  
+Disease <- gridExtra::grid.arrange(MortDis, SizeDis, nrow = 2)
+gridExtra::grid.arrange(SizeMort, Disease, nrow = 1)
+```
+
+```{r}
+#Test for population level differences across depth
+CleanMassives$SizeClass <- as.numeric(CleanMassives$SizeClass)
+CleanMassives$Depth <- factor(CleanMassives$Depth, levels=c('1','3','10','15'))
+CleanMassives$Depth <- as.numeric(CleanMassives$Depth)
+CleanMassives$Depth <- as.character(CleanMassives$Depth)
+head(CleanMassives)
+kruskal.test(SizeClass ~ Depth, data = CleanMassives)
+
+histogram(~ SizeClass | Depth,
+          data=CleanMassives,
+          layout=c(1,4)) 
+boxplot(SizeClass ~ Depth, data = CleanMassives)
+
+DistStats = dunnTest(SizeClass ~ Depth, data = CleanMassives, method = "bh")
+DistStats
+DistStats = DistStats$res
+DistStats
+cldList(comparison = DistStats$Comparison,
+        p.value    = DistStats$P.adj,
+        threshold  = 0.001)
+```
+
+```{r}
+#Plot distributions, get colony counts, and color ratios...
+#now that we've identified it as a statistically supported pattern
+
+CleanMassives$Depth <- as.numeric(CleanMassives$Depth)
+CleanMassives$DepthFactor = factor(CleanMassives$DepthFactor, 
+                                   levels=c('1-2 m','3-5 m','8-10 m','15-18 m'))
+
+Counts <- ggplot(CleanMassives, aes(SizeClass, fill = Color))+
+  geom_bar(position = position_stack(reverse = TRUE))+
+  theme_classic()+
+  ylab('Counts')+
+  xlab('Size-class')+
+  theme(legend.position = "none")+
+  scale_fill_manual(values = c("#d1bb3d","#45384a", "#af7bc7"), 
+                    name = "Color morph", labels = c("brown", "hybrid", "purple")) +
+  theme(axis.text.x = element_text(size = 12), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        legend.title = element_text(size = 14), 
+        legend.text = element_text(size = 12), strip.text.x = element_text(size = 14))+
+  facet_grid(cols = vars(DepthFactor))
+Counts
+
+#Colony counts for each size class across the shallowest and deepest transects
+sum(with(CleanMassives, Depth == "1"))
+sum(with(CleanMassives, Depth == "4"))
+
+sum(with(CleanMassives, Depth == "1" & SizeClass == "6"))
+sum(with(CleanMassives, Depth == "4" & SizeClass == "6"))
+sum(with(CleanMassives, Depth == "1" & SizeClass == "5"))
+sum(with(CleanMassives, Depth == "4" & SizeClass == "5"))
+sum(with(CleanMassives, Depth == "1" & SizeClass == "4"))
+sum(with(CleanMassives, Depth == "4" & SizeClass == "4"))
+sum(with(CleanMassives, Depth == "1" & SizeClass == "3"))
+sum(with(CleanMassives, Depth == "4" & SizeClass == "3"))
+sum(with(CleanMassives, Depth == "1" & SizeClass == "2"))
+sum(with(CleanMassives, Depth == "4" & SizeClass == "2"))
+sum(with(CleanMassives, Depth == "1" & SizeClass == "1"))
+sum(with(CleanMassives, Depth == "4" & SizeClass == "1"))
+head(CleanMassives)
+RatioFacet <- ggplot(CleanMassives, aes(SizeClass, fill = Color))+
+  geom_bar(position = position_fill(reverse = TRUE), stat = "count")+
+  geom_text(aes(label = paste0(..count..)), stat = 'count', 
+            position = position_fill(reverse = TRUE, vjust = 0.5), 
+            size = 3, color = "white", face = "bold")+
+  theme_classic()+
+  ylab('Rel Abun')+
+  xlab('Depth')+
+  theme(legend.position = "bottom")+
+  scale_fill_manual(values = c("#d1bb3d","#45384a", "#af7bc7"), 
+                    name = "Color morph", labels = c("brown", "hybrid", "purple")) +
+  theme(axis.text.x = element_text(size = 12), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        legend.title = element_text(size = 14), 
+        legend.text = element_text(size = 12), 
+        strip.text.x = element_text(size = 14))+
+  facet_grid(cols = vars(DepthFactor))
+RatioFacet
+
+Ratio <- ggplot(CleanMassives, aes(DepthFactor, fill = Color))+
+  geom_bar(position = position_fill(reverse = TRUE), stat = "count")+
+  geom_text(aes(label = paste0(..count..)), stat = 'count', 
+            position = position_fill(reverse = TRUE, vjust = 0.5), size = 3, 
+            color = "white", face = "bold")+
+  theme_classic()+
+  ylab('Rel Abun')+
+  xlab('Depth')+
+  theme(legend.position = "bottom")+
+  scale_fill_manual(values = c("#d1bb3d","#45384a", "#af7bc7"), 
+                    name = "Color morph", labels = c("brown", "hybrid", "purple")) +
+  theme(axis.text.x = element_text(size = 12), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        legend.title = element_text(size = 14), 
+        legend.text = element_text(size = 12), 
+        strip.text.x = element_text(size = 14))
+Ratio
+#Color ratios at each depth
+
+```
+
+```{r}
+##Initial comparison of means to compare mortality across depth
+CleanMassives$PartMort <- as.numeric(CleanMassives$PartMort)
+CleanMassives$Depth <- factor(CleanMassives$Depth)
+
+kruskal.test(PartMort ~ Depth, data = CleanMassives)
+
+histogram(~ PartMort | Depth,
+          data=CleanMassives,
+          layout=c(1,4)) 
+          
+boxplot(PartMort ~ Depth, data = CleanMassives)
+
+DistStats = dunnTest(PartMort ~ Depth, data = CleanMassives, method = "bh")
+DistStats
+DistStats = DistStats$res
+DistStats
+cldList(comparison = DistStats$Comparison,
+        p.value    = DistStats$P.adj,
+        threshold  = 0.001)
+```
+
+This suggests an interaction, as did the Spearman correlation, but confounding factors may be biasing results.
+Groupings also suggest that depth is not what causes statistical differences.
+```{r}
+###Subset each colony size to see if the relationship between mortality and depth is real
+#or if it is simply a byproduct of the colony size class distributions
+Size1 <- subset(CleanMassives, SizeClass == "1")
+kruskal.test(PartMort ~ Depth, data = Size1)
+
+DistStats = dunnTest(PartMort ~ Depth, data = Size1, method = "bh")
+DistStats
+DistStats = DistStats$res
+DistStats
+cldList(comparison = DistStats$Comparison,
+        p.value    = DistStats$P.adj,
+        threshold  = 0.001)
+
+Size2 <- subset(CleanMassives, SizeClass == "2")
+kruskal.test(PartMort ~ Depth, data = Size2)
+
+Size3 <- subset(CleanMassives, SizeClass == "3")
+kruskal.test(PartMort ~ Depth, data = Size3)
+
+Size4 <- subset(CleanMassives, SizeClass == "4")
+kruskal.test(PartMort ~ Depth, data = Size4)
+
+Size5 <- subset(CleanMassives, SizeClass == "5")
+kruskal.test(PartMort ~ Depth, data = Size5)
+
+Size6 <- subset(CleanMassives, SizeClass == "6")
+kruskal.test(PartMort ~ Depth, data = Size6)
+```        
+        
+These tests confirm that size class differences across depth were confounding 
+our partial mortality results.
+The removal of size class as a contributing factor revealed little to no 
+difference in the amount of partial mortality at each depth.
+
+```{r}
+kruskal.test(TotalDisease ~ Depth, data = Size1)
+
+DistStats = dunnTest(TotalDisease ~ Depth, data = Size1, method = "bh")
+DistStats
+DistStats = DistStats$res
+DistStats
+cldList(comparison = DistStats$Comparison,
+        p.value    = DistStats$P.adj,
+        threshold  = 0.001)
+
+kruskal.test(TotalDisease ~ Depth, data = Size2)
+
+DistStats = dunnTest(TotalDisease ~ Depth, data = Size2, method = "bh")
+DistStats
+DistStats = DistStats$res
+DistStats
+cldList(comparison = DistStats$Comparison,
+        p.value    = DistStats$P.adj,
+        threshold  = 0.001)
+
+kruskal.test(TotalDisease ~ Depth, data = Size3)
+
+DistStats = dunnTest(TotalDisease ~ Depth, data = Size3, method = "bh")
+DistStats
+DistStats = DistStats$res
+DistStats
+cldList(comparison = DistStats$Comparison,
+        p.value    = DistStats$P.adj,
+        threshold  = 0.001)
+
+kruskal.test(TotalDisease ~ Depth, data = Size4)
+#Not significant
+kruskal.test(TotalDisease ~ Depth, data = Size5)
+#Not significant
+kruskal.test(TotalDisease ~ Depth, data = Size6)
+#Not significant
+```
+
+```{r}
+#Color-specific comparison of functional traits
+CleanMassives$Depth <- as.numeric(CleanMassives$Depth)
+kruskal.test(Depth ~ Color , data = CleanMassives)
+
+histogram(~ Depth | Color,
+          data=CleanMassives,
+          layout=c(1,3)) 
+boxplot(Depth ~ Color, data = CleanMassives)
+CleanMassives$Depth <- as.numeric(CleanMassives$Depth)
+DepthStats = dunnTest(Depth ~ Color, data = CleanMassives, method = "bh")
+DepthStats
+DepthStats = DepthStats$res
+DepthStats
+
+cldList(comparison = DepthStats$Comparison,
+        p.value    = DepthStats$P.adj,
+        threshold  = 0.001)
+
+kruskal.test(PartMort ~ Color, data = CleanMassives)
+
+histogram(~ PartMort | Color,
+          data=CleanMassives,
+          layout=c(3,3)) 
+boxplot(PartMort ~ Color, data = CleanMassives)
+
+MortStats = dunnTest(PartMort ~ Color, data = CleanMassives, method = "bh")
+MortStats
+MortStats = MortStats$res
+MortStats
+
+cldList(comparison = MortStats$Comparison,
+        p.value    = MortStats$P.adj,
+        threshold  = 0.001)
+
+kruskal.test(SizeClass ~ Color, data = CleanMassives)
+
+histogram(~ SizeClass | Color,
+          data=CleanMassives,
+          layout=c(1,3)) 
+boxplot(SizeClass ~ Color, data = CleanMassives)
+SizeStats = dunnTest(SizeClass ~ Color, data = CleanMassives, method = "bh")
+SizeStats
+SizeStats = SizeStats$res
+SizeStats
+
+cldList(comparison = SizeStats$Comparison,
+        p.value    = SizeStats$P.adj,
+        threshold  = 0.001)
+
+##Needs to be changed to a binary code
+CleanMassives$TotalDisease[CleanMassives$TotalDisease > 0] <- 1
+
+#View(CleanMassives)
+kruskal.test(TotalDisease ~ Color, data = CleanMassives)
+
+histogram(~ TotalDisease | Color,
+          data=CleanMassives,
+          layout=c(1,3)) 
+boxplot(TotalDisease ~ Color, data = CleanMassives)
+
+DisStats = dunnTest(TotalDisease ~ Color, data = CleanMassives, method = "bh")
+DisStats
+DisStats = DisStats$res
+DisStats
+
+cldList(comparison = DisStats$Comparison,
+        p.value    = DisStats$P.adj,
+        threshold  = 0.001)
+```
+
+```{r}
+#Color functional difference plots
+Hybrid <- c("brown", "hybrid", "purple")
+
+CleanMassives$Depth <- as.character(CleanMassives$Depth)
+Depth <- ggplot(CleanMassives, aes(Color, group = Depth, fill = Depth))+
+  geom_bar(position = "fill")+
+  theme_classic()+
+  ylab("Relative abundance")+
+  scale_x_discrete(labels= Hybrid)+
+  theme(legend.position = "bottom")+
+  scale_fill_grey(start = 0.7, end = 0, 
+                  labels=c('1-2 m','3-5 m','8-10 m','15-18 m'), name = "Depth (m)")+
+  theme(axis.text.x = element_text(size = 12, angle = -45), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        legend.title = element_text(size = 12), 
+        legend.text = element_text(size = 11))+
+  guides(fill = guide_legend(nrow = 2, title.position="top"))+
+  ggtitle("A")
+
+CleanMassives$SizeClass <- as.character(CleanMassives$SizeClass)
+Size <- ggplot(CleanMassives, aes(Color, group = SizeClass, fill = SizeClass))+
+  geom_bar(position = position_fill(reverse = TRUE))+
+  theme_classic()+
+  ylab('')+
+  theme(legend.position = "bottom")+
+  scale_x_discrete(labels= Hybrid)+
+  scale_fill_grey(name = "Size-class")+
+  theme(axis.text.x = element_text(size = 12, angle = -45), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), legend.title = element_text(size = 12), legend.text = element_text(size = 11))+
+  guides(fill = guide_legend(nrow = 2, title.position="top"))+
+  ggtitle("B")
+
+CleanMassives$PartMort <- as.character(CleanMassives$PartMort)
+CleanMassives <- CleanMassives[complete.cases(CleanMassives), ]
+
+Mortality <- ggplot(CleanMassives, aes(Color, group = PartMort, fill = PartMort))+
+  geom_bar(position = position_fill(reverse = TRUE))+
+  theme_classic()+
+  ylab('')+
+  theme(legend.position = "bottom")+
+  scale_fill_grey(name = "Mortality")+
+  scale_x_discrete(labels= Hybrid)+
+  theme(axis.text.x = element_text(size = 12, angle = -45), axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        legend.title = element_text(size = 12), legend.text = element_text(size = 11))+
+  guides(fill = guide_legend(nrow = 2, title.position="top"))+
+  ggtitle("C")
+
+CleanMassives$TotalDisease <- as.character(CleanMassives$TotalDisease)
+Dis <- ggplot(CleanMassives, aes(Color, group = TotalDisease, fill = TotalDisease))+
+  geom_bar(position = position_fill(reverse = TRUE))+
+  theme_classic()+
+  theme(legend.position = "bottom")+
+  scale_fill_grey(name = "Disease")+
+  ylab('')+
+  scale_x_discrete(labels= Hybrid)+
+  theme(axis.text.x = element_text(size = 12, angle = -45), 
+        axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 14, face = "bold"), 
+        legend.title = element_text(size = 12), legend.text = element_text(size = 11))+
+  guides(fill = guide_legend(nrow = 2, title.position="top"))+
+  ggtitle("D")
+grid.arrange(Depth, Size, Mortality, Dis, nrow = 1)
+```
